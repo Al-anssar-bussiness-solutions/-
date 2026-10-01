@@ -1,0 +1,2994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Al Ansar Business Solution - POS & Receipt System</title>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+<style>
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+#receipt-preview {
+    width: 100%;
+    max-width: 390px;
+    margin: auto;
+}
+
+button:disabled {
+    cursor: not-allowed;
+}
+
+.toast {
+    animation: toastIn 0.25s ease-out;
+}
+
+.toast.hide {
+    animation: toastOut 0.3s ease-in forwards;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes toastOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+@media print {
+    body * {
+        visibility: hidden !important;
+    }
+
+    #receipt-preview,
+    #receipt-preview * {
+        visibility: visible !important;
+    }
+
+    #receipt-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 80mm;
+        box-shadow: none !important;
+        border: none !important;
+    }
+}
+</style>
+</head>
+
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!-- =========================================================
+     TOAST NOTIFICATIONS
+========================================================= -->
+
+<div id="toast-container"
+     class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 w-[calc(100%-2rem)] max-w-sm pointer-events-none"
+     aria-live="polite">
+</div>
+
+<!-- =========================================================
+     LOGIN
+========================================================= -->
+
+<div id="login-modal"
+     class="fixed inset-0 bg-slate-900 bg-opacity-80 z-50 flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
+
+        <div class="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-full
+                    flex items-center justify-center mx-auto mb-4 text-xl">
+            🔒
+        </div>
+
+        <h2 class="text-xl font-bold mb-1">
+            Restricted Access
+        </h2>
+
+        <p class="text-xs text-slate-500 mb-5">
+            Enter your 4-digit PIN to unlock the POS system.
+        </p>
+
+        <form id="login-form" class="space-y-4">
+
+            <input
+                type="password"
+                id="pin-input"
+                placeholder="Enter PIN"
+                maxlength="4"
+                inputmode="numeric"
+                required
+                class="w-full px-4 py-3 text-center tracking-widest text-lg
+                       border rounded-xl focus:outline-none focus:ring-2
+                       focus:ring-indigo-500">
+
+            <button
+                type="submit"
+                class="w-full bg-indigo-600 hover:bg-indigo-700 text-white
+                       font-medium py-3 rounded-xl">
+                Unlock System
+            </button>
+
+        </form>
+
+        <p id="login-error"
+           class="text-xs text-rose-600 mt-3 hidden">
+            Incorrect PIN. Please try again.
+        </p>
+
+    </div>
+</div>
+
+<!-- =========================================================
+     HEADER
+========================================================= -->
+
+<header class="bg-indigo-700 text-white shadow-md py-4 px-4 sm:px-6 mb-6">
+
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row
+                justify-between items-center">
+
+        <h1 class="text-xl sm:text-2xl font-bold text-center">
+            💼 Al Ansar Business Solution
+        </h1>
+
+        <div class="flex items-center gap-4 mt-2 sm:mt-0">
+
+            <p class="text-indigo-100 text-sm">
+                Professional POS & Receipt Management
+            </p>
+
+            <button
+                onclick="openChangePinModal()"
+                class="bg-indigo-800 hover:bg-indigo-900
+                       text-indigo-100 text-xs px-3 py-1.5 rounded-lg">
+                Change PIN
+            </button>
+
+        </div>
+    </div>
+</header>
+
+<!-- =========================================================
+     CHANGE PIN
+========================================================= -->
+
+<div id="change-pin-modal"
+     class="fixed inset-0 bg-slate-900 bg-opacity-70 z-50 hidden
+            items-center justify-center p-4">
+
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+
+        <h3 class="text-lg font-bold mb-3">
+            Change Security PIN
+        </h3>
+
+        <form id="change-pin-form" class="space-y-3">
+
+            <div>
+                <label class="block text-xs font-medium mb-1">
+                    Current PIN
+                </label>
+
+                <input
+                    type="password"
+                    id="current-pin-input"
+                    maxlength="4"
+                    inputmode="numeric"
+                    required
+                    class="w-full px-3 py-2 border rounded-lg">
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium mb-1">
+                    New PIN
+                </label>
+
+                <input
+                    type="password"
+                    id="new-pin-input"
+                    maxlength="4"
+                    inputmode="numeric"
+                    required
+                    class="w-full px-3 py-2 border rounded-lg">
+            </div>
+
+            <div class="flex gap-2 pt-2">
+
+                <button
+                    type="button"
+                    onclick="closeChangePinModal()"
+                    class="w-1/2 bg-slate-200 py-2 rounded-lg">
+                    Cancel
+                </button>
+
+                <button
+                    type="submit"
+                    class="w-1/2 bg-indigo-600 text-white py-2 rounded-lg">
+                    Update PIN
+                </button>
+
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<!-- =========================================================
+     MAIN
+========================================================= -->
+
+<main class="max-w-7xl mx-auto px-3 sm:px-4
+            grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
+
+<!-- =========================================================
+     LEFT
+========================================================= -->
+
+<div class="lg:col-span-7 space-y-6">
+
+<!-- INVENTORY -->
+
+<div class="bg-white p-4 sm:p-5 rounded-xl shadow-sm border">
+
+    <div class="flex flex-col sm:flex-row justify-between
+                items-start sm:items-center mb-3 border-b pb-2">
+
+        <h2 class="text-lg font-semibold text-indigo-800">
+            1. Add / Manage Shop Inventory
+        </h2>
+
+        <div class="bg-indigo-50 border border-indigo-200
+                    px-3 py-1 rounded-lg text-xs">
+
+            Total Inventory Value:
+
+            <span id="total-inventory-worth"
+                  class="font-bold text-indigo-700">
+                KSh 0
+            </span>
+
+        </div>
+    </div>
+
+    <form id="inventory-form"
+          class="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-4">
+
+        <input
+            type="text"
+            id="inv-item-name"
+            placeholder="Item Name / Service"
+            required
+            class="sm:col-span-5 px-3 py-2 border rounded-lg text-sm">
+
+        <input
+            type="number"
+            id="inv-item-price"
+            placeholder="Price (KSh)"
+            required
+            min="0"
+            step="0.01"
+            class="sm:col-span-3 px-3 py-2 border rounded-lg text-sm">
+
+        <input
+            type="number"
+            id="inv-item-qty"
+            placeholder="Stock Qty"
+            required
+            min="0"
+            step="0.01"
+            class="sm:col-span-2 px-3 py-2 border rounded-lg text-sm">
+
+        <button
+            type="submit"
+            class="sm:col-span-2 bg-indigo-600 hover:bg-indigo-700
+                   text-white font-medium py-2 rounded-lg">
+            Add
+        </button>
+
+    </form>
+
+    <div class="overflow-x-auto max-h-56 overflow-y-auto border rounded-lg">
+
+        <table class="w-full text-left text-sm">
+
+            <thead class="bg-slate-50 sticky top-0">
+
+                <tr>
+                    <th class="p-2 border-b">Item</th>
+                    <th class="p-2 border-b">Price</th>
+                    <th class="p-2 border-b">In Stock</th>
+                    <th class="p-2 border-b text-center">Action</th>
+                </tr>
+
+            </thead>
+
+            <tbody id="inventory-list"></tbody>
+
+        </table>
+
+    </div>
+</div>
+
+<!-- CUSTOMER ORDER -->
+
+<div class="bg-white p-4 sm:p-5 rounded-xl shadow-sm border">
+
+    <h2 class="text-lg font-semibold text-indigo-800 mb-3 border-b pb-2">
+        2. Customer Order Entry
+    </h2>
+
+    <div class="mb-4">
+
+        <label class="block text-xs font-medium mb-1">
+            Customer Name
+        </label>
+
+        <input
+            type="text"
+            id="customer-name-input"
+            placeholder="e.g. John Doe"
+            class="w-full px-3 py-2 border rounded-lg text-sm">
+
+    </div>
+
+    <div class="mb-4">
+
+        <label class="block text-xs font-medium mb-1">
+            Customer Phone Number
+        </label>
+
+        <input
+            type="tel"
+            id="customer-phone-input"
+            placeholder="e.g. 0712345678"
+            class="w-full px-3 py-2 border rounded-lg text-sm">
+
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-3">
+
+        <div class="sm:col-span-5">
+
+            <label class="block text-xs font-medium mb-1">
+                Select Item
+            </label>
+
+            <select
+                id="order-item-select"
+                class="w-full px-3 py-2 border rounded-lg text-sm">
+
+                <option value="">
+                    -- Choose Item --
+                </option>
+
+            </select>
+
+        </div>
+
+        <div class="sm:col-span-4">
+
+            <label class="block text-xs font-medium mb-1">
+                Quantity / Fraction
+            </label>
+
+            <input
+                type="text"
+                id="order-quantity"
+                value="1"
+                placeholder="1, 0.5, half"
+                class="w-full px-3 py-2 border rounded-lg text-sm">
+
+        </div>
+
+        <div class="sm:col-span-3 flex items-end">
+
+            <button
+                type="button"
+                id="add-to-cart-btn"
+                class="w-full bg-blue-600 hover:bg-blue-700
+                       text-white font-medium py-2 rounded-lg">
+
+                Add to Cart
+
+            </button>
+
+        </div>
+
+    </div>
+
+    <div class="bg-amber-50 border border-amber-200
+                rounded-lg p-3 text-xs text-amber-800 mb-4">
+
+        <b>Quantity examples:</b>
+        1 = one unit |
+        0.5 or half = half |
+        2 = two units
+
+    </div>
+
+    <h3 class="text-sm font-medium mb-2">
+        Current Customer Cart
+    </h3>
+
+    <div class="overflow-x-auto border rounded-lg">
+
+        <table class="w-full text-left text-sm">
+
+            <thead class="bg-slate-50">
+
+                <tr>
+                    <th class="p-2 border-b">Item</th>
+                    <th class="p-2 border-b">Qty</th>
+                    <th class="p-2 border-b">Subtotal</th>
+                    <th class="p-2 border-b text-center">Remove</th>
+                </tr>
+
+            </thead>
+
+            <tbody id="cart-list">
+
+                <tr>
+                    <td colspan="4"
+                        class="p-4 text-center text-slate-400">
+                        Cart is empty
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    <div class="mt-4 flex justify-between items-center
+                bg-indigo-50 p-3 rounded-lg">
+
+        <span class="font-bold">
+            Grand Total:
+        </span>
+
+        <span
+            id="grand-total"
+            class="font-bold text-indigo-700 text-xl">
+            KSh 0
+        </span>
+
+    </div>
+
+    <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+        <button
+            id="generate-receipt-btn"
+            type="button"
+            class="bg-indigo-600 hover:bg-indigo-700
+                   text-white font-semibold py-3 rounded-lg">
+
+            🧾 Generate Receipt
+
+        </button>
+
+        <button
+            id="clear-cart-btn"
+            type="button"
+            class="bg-rose-100 hover:bg-rose-200
+                   text-rose-700 font-medium py-3 rounded-lg">
+
+            Clear Cart
+
+        </button>
+
+    </div>
+
+</div>
+
+</div>
+
+<!-- =========================================================
+     RIGHT SIDE RECEIPT
+========================================================= -->
+
+<div class="lg:col-span-5">
+
+<div class="bg-white p-4 sm:p-5 rounded-xl shadow-sm
+            border lg:sticky lg:top-6">
+
+<h2 class="text-lg font-semibold text-indigo-800 mb-3 border-b pb-2">
+    3. Receipt Preview
+</h2>
+
+<!-- RECEIPT -->
+
+<div id="receipt-preview"
+     class="bg-white border border-indigo-200
+            rounded-xl shadow-lg overflow-hidden">
+
+    <div class="h-2 bg-indigo-600"></div>
+
+    <div class="p-4">
+
+        <div class="text-center border-b border-indigo-100
+                    pb-3 mb-3">
+
+            <div class="inline-block bg-indigo-50
+                        text-indigo-700 font-bold px-3 py-1
+                        rounded-full text-[9px] uppercase
+                        tracking-widest border">
+
+                Official Receipt
+
+            </div>
+
+            <h3 class="text-base font-black
+                       text-indigo-900 mt-2">
+
+                AL ANSAR BUSINESS SOLUTION
+
+            </h3>
+
+            <p class="text-slate-500 text-[10px]">
+                Professional Services & Merchandise
+            </p>
+
+            <p class="text-slate-700 font-bold text-[11px] mt-1">
+                📞 0728495108
+            </p>
+
+            <div
+                id="receipt-date"
+                class="inline-block bg-slate-50 px-2 py-1
+                       rounded text-slate-600 text-[9px] mt-2 font-mono border">
+
+                -- / -- / ---- --:--:--
+
+            </div>
+
+        </div>
+
+        <div class="bg-indigo-50 p-3 rounded-lg
+                    border border-indigo-100 mb-3">
+
+            <p class="text-[8px] text-indigo-600 font-bold uppercase">
+                Billed To
+            </p>
+
+            <p
+                id="receipt-customer-name"
+                class="font-bold text-slate-900 text-xs mt-1">
+
+                Walk-in Customer
+
+            </p>
+
+            <p
+                id="receipt-customer-phone"
+                class="text-slate-600 text-[9px] mt-1">
+            </p>
+
+        </div>
+
+        <div class="grid grid-cols-12 font-bold
+                    text-indigo-900 border-b
+                    border-indigo-200 pb-2 text-[10px]">
+
+            <span class="col-span-6">
+                ITEM
+            </span>
+
+            <span class="col-span-3 text-center">
+                QTY
+            </span>
+
+            <span class="col-span-3 text-right">
+                TOTAL
+            </span>
+
+        </div>
+
+        <div id="receipt-items"
+             class="mb-3 min-h-[50px]">
+
+            <p class="text-center text-slate-400
+                      py-5 italic text-[10px]">
+
+                No items billed yet.
+
+            </p>
+
+        </div>
+
+        <div class="border-t border-slate-200 pt-2">
+
+            <div class="flex justify-between items-center
+                        bg-indigo-600 text-white p-3
+                        rounded-lg font-bold text-xs">
+
+                <span>
+                    GRAND TOTAL
+                </span>
+
+                <span
+                    id="receipt-grand-total"
+                    class="text-sm">
+
+                    KSh 0
+
+                </span>
+
+            </div>
+
+        </div>
+
+        <div class="text-center mt-4 pt-3
+                    border-t border-dashed
+                    border-slate-200 text-[9px]
+                    text-slate-500">
+
+            <p class="font-bold text-slate-700">
+                Thank you for your business!
+            </p>
+
+            <p class="text-slate-400 mt-1">
+                Goods once sold are not returnable.
+            </p>
+
+            <p class="font-bold mt-1 text-indigo-700">
+                📞 0728495108
+            </p>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- =========================================================
+     PDF BUTTONS
+========================================================= -->
+
+<div class="mt-4 space-y-2">
+
+    <button
+        id="share-pdf-btn"
+        disabled
+        class="w-full bg-emerald-600
+               hover:bg-emerald-700
+               disabled:opacity-40
+               text-white font-semibold
+               py-3 rounded-lg shadow-md">
+
+        📤 Share Actual PDF Receipt
+
+    </button>
+
+    <button
+        id="download-pdf-btn"
+        disabled
+        class="w-full bg-slate-800
+               hover:bg-slate-900
+               disabled:opacity-40
+               text-white font-medium
+               py-3 rounded-lg">
+
+        📥 Download PDF Receipt
+
+    </button>
+
+    <button
+        id="print-pdf-btn"
+        disabled
+        class="w-full bg-indigo-700
+               hover:bg-indigo-800
+               disabled:opacity-40
+               text-white font-semibold
+               py-3 rounded-lg">
+
+        🖨️ Print / Save PDF
+
+    </button>
+
+</div>
+
+<div class="mt-3 bg-emerald-50 border
+            border-emerald-200 rounded-lg p-3">
+
+    <p class="text-xs text-emerald-800">
+
+        <b>PDF sharing:</b>
+        Tap <b>Share Actual PDF Receipt</b>, then choose
+        WhatsApp or another app. The receipt is shared
+        as an actual PDF file.
+
+    </p>
+
+</div>
+
+</div>
+</div>
+
+</main>
+
+<!-- =========================================================
+     JAVASCRIPT
+========================================================= -->
+
+<script>
+
+/* =========================================================
+   TOAST SYSTEM
+   No browser alert() or confirm() popups are used.
+========================================================= */
+
+function showToast(message, type = "success") {
+
+    const container =
+        document.getElementById("toast-container");
+
+    const toast =
+        document.createElement("div");
+
+    let bgClass = "bg-emerald-600";
+
+    if (type === "error") {
+        bgClass = "bg-rose-600";
+    }
+
+    if (type === "warning") {
+        bgClass = "bg-amber-500";
+    }
+
+    if (type === "info") {
+        bgClass = "bg-indigo-600";
+    }
+
+    toast.className =
+        `toast ${bgClass}
+         text-white px-4 py-3 rounded-xl
+         shadow-xl text-sm font-medium
+         pointer-events-auto`;
+
+    toast.textContent = message;
+
+    container.appendChild(toast);
+
+    setTimeout(function() {
+
+        toast.classList.add("hide");
+
+        setTimeout(function() {
+
+            toast.remove();
+
+        }, 300);
+
+    }, 3000);
+}
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+const loginModal =
+    document.getElementById("login-modal");
+
+const loginForm =
+    document.getElementById("login-form");
+
+const pinInput =
+    document.getElementById("pin-input");
+
+const loginError =
+    document.getElementById("login-error");
+
+const changePinModal =
+    document.getElementById("change-pin-modal");
+
+const changePinForm =
+    document.getElementById("change-pin-form");
+
+const currentPinInput =
+    document.getElementById("current-pin-input");
+
+const newPinInput =
+    document.getElementById("new-pin-input");
+
+if (!localStorage.getItem("pos_pin")) {
+
+    localStorage.setItem(
+        "pos_pin",
+        "1234"
+    );
+
+}
+
+loginForm.addEventListener(
+    "submit",
+    function(e) {
+
+        e.preventDefault();
+
+        const enteredPin =
+            pinInput.value.trim();
+
+        const savedPin =
+            localStorage.getItem("pos_pin") || "1234";
+
+        if (enteredPin === savedPin) {
+
+            loginModal.classList.add("hidden");
+
+            loginError.classList.add("hidden");
+
+            pinInput.value = "";
+
+            init();
+
+        } else {
+
+            loginError.classList.remove("hidden");
+
+            pinInput.value = "";
+
+            pinInput.focus();
+
+        }
+
+    }
+);
+
+function openChangePinModal() {
+
+    currentPinInput.value = "";
+
+    newPinInput.value = "";
+
+    changePinModal.classList.remove("hidden");
+
+    changePinModal.classList.add("flex");
+
+}
+
+function closeChangePinModal() {
+
+    changePinModal.classList.add("hidden");
+
+    changePinModal.classList.remove("flex");
+
+}
+
+changePinForm.addEventListener(
+    "submit",
+    function(e) {
+
+        e.preventDefault();
+
+        const currentPin =
+            currentPinInput.value.trim();
+
+        const newPin =
+            newPinInput.value.trim();
+
+        const savedPin =
+            localStorage.getItem("pos_pin") || "1234";
+
+        if (currentPin !== savedPin) {
+
+            showToast(
+                "Incorrect previous PIN entered.",
+                "error"
+            );
+
+            return;
+        }
+
+        if (!/^\d{4}$/.test(newPin)) {
+
+            showToast(
+                "New PIN must contain exactly 4 numbers.",
+                "warning"
+            );
+
+            return;
+        }
+
+        localStorage.setItem(
+            "pos_pin",
+            newPin
+        );
+
+        closeChangePinModal();
+
+        showToast(
+            "PIN successfully updated.",
+            "success"
+        );
+
+    }
+);
+
+/* =========================================================
+   FIREBASE
+========================================================= */
+
+const firebaseConfig = {
+
+    apiKey:
+        "AIzaSyCJgFXYxnkwbm2ZTyt8NobTZkgTwf4P3Aw",
+
+    authDomain:
+        "alrahma-3ecad.firebaseapp.com",
+
+    databaseURL:
+        "https://alrahma-3ecad-default-rtdb.europe-west1.firebasedatabase.app",
+
+    projectId:
+        "alrahma-3ecad",
+
+    storageBucket:
+        "alrahma-3ecad.firebasestorage.app",
+
+    messagingSenderId:
+        "90685362602",
+
+    appId:
+        "1:90685362602:web:4976b998ce639d41c35bd3",
+
+    measurementId:
+        "G-T6QM3C7RE9"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const db =
+    firebase.database();
+
+let inventory = [];
+
+let cart = [];
+
+let lastGeneratedOrder = null;
+
+let receiptGeneratedForCurrentCart = false;
+
+/* =========================================================
+   ELEMENTS
+========================================================= */
+
+const inventoryForm =
+    document.getElementById("inventory-form");
+
+const invItemName =
+    document.getElementById("inv-item-name");
+
+const invItemPrice =
+    document.getElementById("inv-item-price");
+
+const invItemQty =
+    document.getElementById("inv-item-qty");
+
+const inventoryList =
+    document.getElementById("inventory-list");
+
+const totalInventoryWorthEl =
+    document.getElementById("total-inventory-worth");
+
+const customerNameInput =
+    document.getElementById("customer-name-input");
+
+const customerPhoneInput =
+    document.getElementById("customer-phone-input");
+
+const orderItemSelect =
+    document.getElementById("order-item-select");
+
+const orderQuantity =
+    document.getElementById("order-quantity");
+
+const addToCartBtn =
+    document.getElementById("add-to-cart-btn");
+
+const cartList =
+    document.getElementById("cart-list");
+
+const grandTotalEl =
+    document.getElementById("grand-total");
+
+const generateReceiptBtn =
+    document.getElementById("generate-receipt-btn");
+
+const clearCartBtn =
+    document.getElementById("clear-cart-btn");
+
+const receiptItems =
+    document.getElementById("receipt-items");
+
+const receiptGrandTotal =
+    document.getElementById("receipt-grand-total");
+
+const receiptDate =
+    document.getElementById("receipt-date");
+
+const receiptCustomerName =
+    document.getElementById("receipt-customer-name");
+
+const receiptCustomerPhone =
+    document.getElementById("receipt-customer-phone");
+
+const sharePdfBtn =
+    document.getElementById("share-pdf-btn");
+
+const downloadPdfBtn =
+    document.getElementById("download-pdf-btn");
+
+const printPdfBtn =
+    document.getElementById("print-pdf-btn");
+
+/* =========================================================
+   MONEY
+========================================================= */
+
+function formatMoney(number) {
+
+    return Number(number || 0).toLocaleString(
+        "en-KE",
+        {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        }
+    );
+
+}
+
+/* =========================================================
+   FILE NAME
+========================================================= */
+
+function sanitizeFileName(name) {
+
+    const clean =
+        String(name || "Customer")
+            .replace(/[^\w\s-]/g, "")
+            .trim()
+            .replace(/\s+/g, "_")
+            .substring(0, 40);
+
+    return clean || "Customer";
+
+}
+
+function getPDFFileName() {
+
+    const customer =
+        sanitizeFileName(
+            lastGeneratedOrder?.customerName
+        );
+
+    return (
+        "Al_Ansar_Receipt_" +
+        customer +
+        "_" +
+        Date.now() +
+        ".pdf"
+    );
+
+}
+
+/* =========================================================
+   SECURITY
+========================================================= */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(/&/g, "&amp;")
+
+        .replace(/</g, "&lt;")
+
+        .replace(/>/g, "&gt;")
+
+        .replace(/"/g, "&quot;")
+
+        .replace(/'/g, "&#039;");
+
+}
+
+/* =========================================================
+   INITIALIZE
+========================================================= */
+
+function init() {
+
+    loadInventoryFromFirebase();
+
+    renderCart();
+
+}
+
+/* =========================================================
+   LOAD INVENTORY
+========================================================= */
+
+function loadInventoryFromFirebase() {
+
+    db.ref("inventory").on(
+        "value",
+        function(snapshot) {
+
+            const data =
+                snapshot.val();
+
+            inventory = [];
+
+            if (data) {
+
+                Object.keys(data).forEach(
+                    function(firebaseKey) {
+
+                        inventory.push({
+
+                            firebaseKey:
+                                firebaseKey,
+
+                            id:
+                                data[firebaseKey].id,
+
+                            name:
+                                data[firebaseKey].name,
+
+                            price:
+                                Number(
+                                    data[firebaseKey].price
+                                ),
+
+                            quantity:
+                                data[firebaseKey].quantity !== undefined
+                                ? Number(
+                                    data[firebaseKey].quantity
+                                  )
+                                : 0
+
+                        });
+
+                    }
+                );
+
+            }
+
+            renderInventory();
+
+            renderDropdown();
+
+        },
+        function(error) {
+
+            showToast(
+                "Unable to load inventory: " +
+                error.message,
+                "error"
+            );
+
+        }
+    );
+
+}
+
+/* =========================================================
+   ADD INVENTORY
+========================================================= */
+
+inventoryForm.addEventListener(
+    "submit",
+    function(e) {
+
+        e.preventDefault();
+
+        const name =
+            invItemName.value.trim();
+
+        const price =
+            parseFloat(
+                invItemPrice.value
+            );
+
+        const quantity =
+            parseFloat(
+                invItemQty.value
+            );
+
+        if (!name) {
+
+            showToast(
+                "Please enter an item name.",
+                "warning"
+            );
+
+            return;
+        }
+
+        if (isNaN(price) || price < 0) {
+
+            showToast(
+                "Please enter a valid price.",
+                "warning"
+            );
+
+            return;
+        }
+
+        if (isNaN(quantity) || quantity < 0) {
+
+            showToast(
+                "Please enter a valid quantity.",
+                "warning"
+            );
+
+            return;
+        }
+
+        const newItem = {
+
+            id:
+                Date.now(),
+
+            name:
+                name,
+
+            price:
+                price,
+
+            quantity:
+                quantity
+
+        };
+
+        db.ref("inventory")
+            .push(newItem)
+
+            .then(function() {
+
+                invItemName.value = "";
+
+                invItemPrice.value = "";
+
+                invItemQty.value = "";
+
+                showToast(
+                    "Item added to inventory.",
+                    "success"
+                );
+
+            })
+
+            .catch(function(error) {
+
+                showToast(
+                    "Unable to save item: " +
+                    error.message,
+                    "error"
+                );
+
+            });
+
+    }
+);
+
+/* =========================================================
+   RENDER INVENTORY
+========================================================= */
+
+function renderInventory() {
+
+    if (inventory.length === 0) {
+
+        inventoryList.innerHTML =
+            `<tr>
+                <td colspan="4"
+                    class="p-3 text-center text-slate-400">
+                    No items in inventory.
+                </td>
+            </tr>`;
+
+        totalInventoryWorthEl.textContent =
+            "KSh 0";
+
+        return;
+    }
+
+    const totalWorth =
+        inventory.reduce(
+            function(sum, item) {
+
+                return sum +
+                    (
+                        Number(item.price) *
+                        Number(item.quantity || 0)
+                    );
+
+            },
+            0
+        );
+
+    totalInventoryWorthEl.textContent =
+        "KSh " +
+        formatMoney(totalWorth);
+
+    inventoryList.innerHTML =
+        inventory.map(
+            function(item) {
+
+                return `
+                <tr class="border-b hover:bg-slate-50">
+
+                    <td class="p-2 font-medium">
+                        ${escapeHTML(item.name)}
+                    </td>
+
+                    <td class="p-2">
+                        KSh ${formatMoney(item.price)}
+                    </td>
+
+                    <td class="p-2">
+
+                        <span class="px-2 py-0.5 rounded text-xs
+                            ${
+                                item.quantity > 0
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-rose-100 text-rose-800"
+                            }">
+
+                            ${item.quantity} units
+
+                        </span>
+
+                    </td>
+
+                    <td class="p-2 text-center">
+
+                        <button
+                            onclick="deleteInventoryItem('${item.firebaseKey}')"
+                            class="text-rose-600 bg-rose-50
+                                   px-2 py-1 rounded text-xs">
+
+                            Delete
+
+                        </button>
+
+                    </td>
+
+                </tr>
+                `;
+
+            }
+        ).join("");
+
+}
+
+/* =========================================================
+   DELETE INVENTORY
+   NO CONFIRM POPUP
+========================================================= */
+
+function deleteInventoryItem(firebaseKey) {
+
+    const item =
+        inventory.find(
+            function(i) {
+                return i.firebaseKey === firebaseKey;
+            }
+        );
+
+    if (!item) {
+
+        showToast(
+            "Inventory item was not found.",
+            "error"
+        );
+
+        return;
+    }
+
+    db.ref(
+        "inventory/" +
+        firebaseKey
+    )
+    .remove()
+
+    .then(function() {
+
+        /* Remove deleted item from current cart */
+        cart =
+            cart.filter(
+                function(cartItem) {
+                    return cartItem.firebaseKey !== firebaseKey;
+                }
+            );
+
+        renderCart();
+
+        showToast(
+            `"${item.name}" deleted from inventory.`,
+            "success"
+        );
+
+    })
+
+    .catch(function(error) {
+
+        showToast(
+            "Unable to delete item: " +
+            error.message,
+            "error"
+        );
+
+    });
+
+}
+
+/* =========================================================
+   DROPDOWN
+========================================================= */
+
+function renderDropdown() {
+
+    orderItemSelect.innerHTML =
+        `<option value="">
+            -- Choose Item --
+        </option>` +
+
+        inventory.map(
+            function(item) {
+
+                return `
+                <option value="${item.id}">
+
+                    ${escapeHTML(item.name)}
+                    -
+                    KSh ${formatMoney(item.price)}
+                    (${item.quantity} in stock)
+
+                </option>
+                `;
+
+            }
+        ).join("");
+
+}
+
+/* =========================================================
+   QUANTITY
+========================================================= */
+
+function parseQuantity(input) {
+
+    const value =
+        String(input)
+            .trim()
+            .toLowerCase();
+
+    if (
+        value === "half" ||
+        value === "1/2"
+    ) {
+
+        return 0.5;
+
+    }
+
+    if (
+        value === "quarter" ||
+        value === "1/4"
+    ) {
+
+        return 0.25;
+
+    }
+
+    const number =
+        parseFloat(value);
+
+    if (
+        isNaN(number) ||
+        number <= 0
+    ) {
+
+        return 1;
+
+    }
+
+    return number;
+
+}
+
+/* =========================================================
+   ADD TO CART
+========================================================= */
+
+addToCartBtn.addEventListener(
+    "click",
+    function() {
+
+        if (receiptGeneratedForCurrentCart) {
+
+            showToast(
+                "This sale has already been generated. Clear the cart to start a new sale.",
+                "warning"
+            );
+
+            return;
+        }
+
+        const selectedId =
+            parseInt(
+                orderItemSelect.value
+            );
+
+        if (!selectedId) {
+
+            showToast(
+                "Please select an item.",
+                "warning"
+            );
+
+            return;
+        }
+
+        const item =
+            inventory.find(
+                function(i) {
+
+                    return Number(i.id) ===
+                        selectedId;
+
+                }
+            );
+
+        if (!item) {
+
+            showToast(
+                "Selected item was not found.",
+                "error"
+            );
+
+            return;
+        }
+
+        const rawQuantity =
+            orderQuantity.value.trim() ||
+            "1";
+
+        const quantity =
+            parseQuantity(
+                rawQuantity
+            );
+
+        /*
+         * Calculate quantity already placed
+         * in the current cart for this item.
+         */
+
+        const alreadyInCart =
+            cart
+                .filter(
+                    function(c) {
+                        return c.firebaseKey === item.firebaseKey;
+                    }
+                )
+                .reduce(
+                    function(total, c) {
+                        return total + c.quantityVal;
+                    },
+                    0
+                );
+
+        if (
+            alreadyInCart + quantity >
+            item.quantity
+        ) {
+
+            showToast(
+                `Insufficient stock. Available stock for ${item.name} is ${Math.max(0, item.quantity - alreadyInCart)}.`,
+                "warning"
+            );
+
+            return;
+        }
+
+        const subtotal =
+            item.price *
+            quantity;
+
+        cart.push({
+
+            id:
+                item.id,
+
+            firebaseKey:
+                item.firebaseKey,
+
+            name:
+                item.name,
+
+            unitPrice:
+                item.price,
+
+            quantityText:
+                rawQuantity,
+
+            quantityVal:
+                quantity,
+
+            subtotal:
+                subtotal
+
+        });
+
+        orderQuantity.value =
+            "1";
+
+        orderItemSelect.value =
+            "";
+
+        renderCart();
+
+    }
+);
+
+/* =========================================================
+   REMOVE CART ITEM
+========================================================= */
+
+function removeFromCart(index) {
+
+    if (receiptGeneratedForCurrentCart) {
+
+        showToast(
+            "This receipt has already been generated. Clear the cart to start a new sale.",
+            "warning"
+        );
+
+        return;
+    }
+
+    cart.splice(
+        index,
+        1
+    );
+
+    renderCart();
+
+}
+
+/* =========================================================
+   RENDER CART
+========================================================= */
+
+function renderCart() {
+
+    if (cart.length === 0) {
+
+        cartList.innerHTML =
+            `<tr>
+                <td colspan="4"
+                    class="p-4 text-center text-slate-400">
+                    Cart is empty
+                </td>
+            </tr>`;
+
+        grandTotalEl.textContent =
+            "KSh 0";
+
+        return;
+    }
+
+    cartList.innerHTML =
+        cart.map(
+            function(item, index) {
+
+                return `
+                <tr class="border-b">
+
+                    <td class="p-2">
+                        ${escapeHTML(item.name)}
+                    </td>
+
+                    <td class="p-2">
+                        ${escapeHTML(item.quantityText)}
+                    </td>
+
+                    <td class="p-2">
+                        KSh ${formatMoney(item.subtotal)}
+                    </td>
+
+                    <td class="p-2 text-center">
+
+                        <button
+                            onclick="removeFromCart(${index})"
+                            class="text-rose-600 bg-rose-50
+                                   px-2 py-1 rounded text-xs">
+
+                            X
+
+                        </button>
+
+                    </td>
+
+                </tr>
+                `;
+
+            }
+        ).join("");
+
+    const total =
+        cart.reduce(
+            function(sum, item) {
+
+                return sum +
+                    item.subtotal;
+
+            },
+            0
+        );
+
+    grandTotalEl.textContent =
+        "KSh " +
+        formatMoney(total);
+
+}
+
+/* =========================================================
+   ENABLE / DISABLE PDF BUTTONS
+========================================================= */
+
+function enablePDFButtons() {
+
+    sharePdfBtn.disabled = false;
+
+    downloadPdfBtn.disabled = false;
+
+    printPdfBtn.disabled = false;
+
+}
+
+function disablePDFButtons() {
+
+    sharePdfBtn.disabled = true;
+
+    downloadPdfBtn.disabled = true;
+
+    printPdfBtn.disabled = true;
+
+}
+
+/* =========================================================
+   GENERATE RECEIPT
+   NO ALERT POPUP
+========================================================= */
+
+generateReceiptBtn.addEventListener(
+    "click",
+    async function() {
+
+        if (cart.length === 0) {
+
+            showToast(
+                "Cannot generate a receipt for an empty cart.",
+                "warning"
+            );
+
+            return;
+        }
+
+        if (receiptGeneratedForCurrentCart) {
+
+            showToast(
+                "This receipt has already been generated. Use the PDF buttons or clear the cart for a new sale.",
+                "info"
+            );
+
+            return;
+        }
+
+        const customerName =
+            customerNameInput.value.trim() ||
+            "Walk-in Customer";
+
+        const customerPhone =
+            customerPhoneInput.value.trim();
+
+        const now =
+            new Date();
+
+        const dateText =
+            now.toLocaleDateString(
+                "en-KE"
+            ) +
+            " " +
+            now.toLocaleTimeString(
+                "en-KE",
+                {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                }
+            );
+
+        receiptCustomerName.textContent =
+            customerName;
+
+        receiptCustomerPhone.textContent =
+            customerPhone
+            ? "📞 Customer: " +
+              customerPhone
+            : "";
+
+        receiptDate.textContent =
+            "Printed: " +
+            dateText;
+
+        let html = "";
+
+        let total = 0;
+
+        cart.forEach(
+            function(item) {
+
+                total +=
+                    item.subtotal;
+
+                html += `
+                <div class="grid grid-cols-12
+                            text-slate-700 py-2
+                            border-b border-dashed
+                            border-slate-200 text-[10px]">
+
+                    <span class="col-span-6
+                                 font-medium text-slate-900">
+
+                        ${escapeHTML(item.name)}
+
+                    </span>
+
+                    <span class="col-span-3
+                                 text-center font-mono">
+
+                        ${escapeHTML(item.quantityText)}
+
+                    </span>
+
+                    <span class="col-span-3
+                                 text-right font-bold">
+
+                        KSh ${formatMoney(item.subtotal)}
+
+                    </span>
+
+                </div>
+                `;
+
+            }
+        );
+
+        receiptItems.innerHTML =
+            html;
+
+        receiptGrandTotal.textContent =
+            "KSh " +
+            formatMoney(total);
+
+        lastGeneratedOrder = {
+
+            customerName:
+                customerName,
+
+            customerPhone:
+                customerPhone,
+
+            date:
+                dateText,
+
+            total:
+                total,
+
+            items:
+                cart.map(
+                    function(i) {
+
+                        return {
+
+                            name:
+                                i.name,
+
+                            quantity:
+                                i.quantityText,
+
+                            unitPrice:
+                                i.unitPrice,
+
+                            subtotal:
+                                i.subtotal
+
+                        };
+
+                    }
+                )
+
+        };
+
+        /*
+         * Save transaction first.
+         */
+
+        try {
+
+            await db.ref("transactions")
+                .push(
+                    lastGeneratedOrder
+                );
+
+            /*
+             * Reduce stock only after
+             * transaction has successfully
+             * been saved.
+             */
+
+            const updates = {};
+
+            cart.forEach(
+                function(item) {
+
+                    if (!item.firebaseKey) {
+                        return;
+                    }
+
+                    const invItem =
+                        inventory.find(
+                            function(i) {
+
+                                return i.firebaseKey ===
+                                    item.firebaseKey;
+
+                            }
+                        );
+
+                    if (!invItem) {
+                        return;
+                    }
+
+                    const updatedQty =
+                        Math.max(
+                            0,
+                            Number(invItem.quantity) -
+                            Number(item.quantityVal)
+                        );
+
+                    updates[
+                        "inventory/" +
+                        item.firebaseKey +
+                        "/quantity"
+                    ] =
+                        updatedQty;
+
+                }
+            );
+
+            if (Object.keys(updates).length > 0) {
+
+                await db.ref().update(
+                    updates
+                );
+
+            }
+
+            receiptGeneratedForCurrentCart =
+                true;
+
+            generateReceiptBtn.disabled =
+                true;
+
+            generateReceiptBtn.classList.add(
+                "opacity-50",
+                "cursor-not-allowed"
+            );
+
+            enablePDFButtons();
+
+            showToast(
+                "Receipt generated successfully. Your PDF buttons are ready.",
+                "success"
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            lastGeneratedOrder =
+                null;
+
+            showToast(
+                "Receipt could not be saved: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+/* =========================================================
+   CREATE ACTUAL PDF FILE
+========================================================= */
+
+function createPDF() {
+
+    if (!lastGeneratedOrder) {
+
+        throw new Error(
+            "Please generate the receipt first."
+        );
+
+    }
+
+    const { jsPDF } =
+        window.jspdf;
+
+    const doc =
+        new jsPDF({
+
+            orientation:
+                "portrait",
+
+            unit:
+                "mm",
+
+            format:
+                "a6",
+
+            compress:
+                true
+
+        });
+
+    const pageWidth =
+        doc.internal.pageSize.getWidth();
+
+    const pageHeight =
+        doc.internal.pageSize.getHeight();
+
+    const margin =
+        7;
+
+    const bottomMargin =
+        14;
+
+    let y =
+        8;
+
+    function checkPageSpace(requiredHeight) {
+
+        if (
+            y + requiredHeight >
+            pageHeight - bottomMargin
+        ) {
+
+            doc.addPage();
+
+            y = 8;
+
+            doc.setFillColor(
+                79,
+                70,
+                229
+            );
+
+            doc.rect(
+                0,
+                0,
+                pageWidth,
+                4,
+                "F"
+            );
+
+            return true;
+
+        }
+
+        return false;
+
+    }
+
+    /* Top line */
+
+    doc.setFillColor(
+        79,
+        70,
+        229
+    );
+
+    doc.rect(
+        0,
+        0,
+        pageWidth,
+        4,
+        "F"
+    );
+
+    /* Official receipt */
+
+    doc.setTextColor(
+        79,
+        70,
+        229
+    );
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setFontSize(
+        7
+    );
+
+    doc.text(
+        "OFFICIAL RECEIPT",
+        pageWidth / 2,
+        y + 3,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 8;
+
+    /* Business name */
+
+    doc.setTextColor(
+        25,
+        35,
+        70
+    );
+
+    doc.setFontSize(
+        11
+    );
+
+    doc.text(
+        "AL ANSAR BUSINESS SOLUTION",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 5;
+
+    doc.setTextColor(
+        100,
+        100,
+        100
+    );
+
+    doc.setFont(
+        "helvetica",
+        "normal"
+    );
+
+    doc.setFontSize(
+        6.5
+    );
+
+    doc.text(
+        "Professional Services & Merchandise",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 4;
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setFontSize(
+        7
+    );
+
+    doc.text(
+        "Tel: 0728495108",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 5;
+
+    doc.setFont(
+        "helvetica",
+        "normal"
+    );
+
+    doc.setFontSize(
+        6.5
+    );
+
+    doc.text(
+        "Printed: " +
+        lastGeneratedOrder.date,
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 5;
+
+    doc.setDrawColor(
+        210,
+        210,
+        210
+    );
+
+    doc.line(
+        margin,
+        y,
+        pageWidth - margin,
+        y
+    );
+
+    /* Customer */
+
+    y += 6;
+
+    doc.setFillColor(
+        241,
+        245,
+        255
+    );
+
+    doc.roundedRect(
+        margin,
+        y - 2,
+        pageWidth - margin * 2,
+        14,
+        2,
+        2,
+        "F"
+    );
+
+    doc.setTextColor(
+        79,
+        70,
+        229
+    );
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setFontSize(
+        6
+    );
+
+    doc.text(
+        "BILLED TO",
+        margin + 3,
+        y + 2
+    );
+
+    doc.setTextColor(
+        30,
+        30,
+        30
+    );
+
+    doc.setFontSize(
+        7.5
+    );
+
+    const customerName =
+        String(
+            lastGeneratedOrder.customerName
+        ).substring(
+            0,
+            32
+        );
+
+    doc.text(
+        customerName,
+        margin + 3,
+        y + 7
+    );
+
+    if (
+        lastGeneratedOrder.customerPhone
+    ) {
+
+        doc.setTextColor(
+            90,
+            90,
+            90
+        );
+
+        doc.setFontSize(
+            6.5
+        );
+
+        doc.text(
+            "Customer: " +
+            String(
+                lastGeneratedOrder.customerPhone
+            ).substring(
+                0,
+                24
+            ),
+            margin + 3,
+            y + 11
+        );
+
+    }
+
+    y += 18;
+
+    /* Table heading */
+
+    checkPageSpace(12);
+
+    doc.setTextColor(
+        30,
+        40,
+        80
+    );
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setFontSize(
+        6.5
+    );
+
+    doc.text(
+        "ITEM",
+        margin,
+        y
+    );
+
+    doc.text(
+        "QTY",
+        pageWidth - 38,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    doc.text(
+        "TOTAL",
+        pageWidth - margin,
+        y,
+        {
+            align:
+                "right"
+        }
+    );
+
+    y += 5;
+
+    /* Items */
+
+    lastGeneratedOrder.items.forEach(
+        function(item) {
+
+            checkPageSpace(9);
+
+            doc.setTextColor(
+                35,
+                35,
+                35
+            );
+
+            doc.setFont(
+                "helvetica",
+                "normal"
+            );
+
+            doc.setFontSize(
+                6.5
+            );
+
+            const itemName =
+                String(
+                    item.name
+                ).substring(
+                    0,
+                    25
+                );
+
+            doc.text(
+                itemName,
+                margin,
+                y
+            );
+
+            doc.text(
+                String(
+                    item.quantity
+                ),
+                pageWidth - 38,
+                y,
+                {
+                    align:
+                        "center"
+                }
+            );
+
+            doc.setFont(
+                "helvetica",
+                "bold"
+            );
+
+            doc.text(
+                "KSh " +
+                formatMoney(
+                    item.subtotal
+                ),
+                pageWidth - margin,
+                y,
+                {
+                    align:
+                        "right"
+                }
+            );
+
+            y += 6;
+
+        }
+    );
+
+    y += 2;
+
+    /* Grand total */
+
+    checkPageSpace(18);
+
+    doc.setFillColor(
+        79,
+        70,
+        229
+    );
+
+    doc.roundedRect(
+        margin,
+        y,
+        pageWidth - margin * 2,
+        10,
+        2,
+        2,
+        "F"
+    );
+
+    doc.setTextColor(
+        255,
+        255,
+        255
+    );
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setFontSize(
+        7
+    );
+
+    doc.text(
+        "GRAND TOTAL",
+        margin + 3,
+        y + 6.5
+    );
+
+    doc.text(
+        "KSh " +
+        formatMoney(
+            lastGeneratedOrder.total
+        ),
+        pageWidth - margin - 3,
+        y + 6.5,
+        {
+            align:
+                "right"
+        }
+    );
+
+    y += 16;
+
+    /* Footer */
+
+    checkPageSpace(15);
+
+    doc.setTextColor(
+        90,
+        90,
+        90
+    );
+
+    doc.setFont(
+        "helvetica",
+        "normal"
+    );
+
+    doc.setFontSize(
+        6.5
+    );
+
+    doc.text(
+        "Thank you for your business!",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 4;
+
+    doc.setFontSize(
+        5.8
+    );
+
+    doc.text(
+        "Goods once sold are not returnable.",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    y += 4;
+
+    doc.setFont(
+        "helvetica",
+        "bold"
+    );
+
+    doc.setTextColor(
+        79,
+        70,
+        229
+    );
+
+    doc.text(
+        "Tel: 0728495108",
+        pageWidth / 2,
+        y,
+        {
+            align:
+                "center"
+        }
+    );
+
+    return doc;
+
+}
+
+/* =========================================================
+   DOWNLOAD PDF
+========================================================= */
+
+downloadPdfBtn.addEventListener(
+    "click",
+    function() {
+
+        if (!lastGeneratedOrder) {
+
+            showToast(
+                "Please generate the receipt first.",
+                "warning"
+            );
+
+            return;
+        }
+
+        try {
+
+            const doc =
+                createPDF();
+
+            const fileName =
+                getPDFFileName();
+
+            doc.save(
+                fileName
+            );
+
+            showToast(
+                "PDF downloaded successfully.",
+                "success"
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            showToast(
+                "Unable to download the PDF: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+/* =========================================================
+   SHARE ACTUAL PDF FILE
+========================================================= */
+
+sharePdfBtn.addEventListener(
+    "click",
+    async function() {
+
+        if (!lastGeneratedOrder) {
+
+            showToast(
+                "Please generate the receipt first.",
+                "warning"
+            );
+
+            return;
+        }
+
+        const originalText =
+            sharePdfBtn.innerHTML;
+
+        sharePdfBtn.disabled =
+            true;
+
+        sharePdfBtn.innerHTML =
+            "⏳ Preparing PDF...";
+
+        try {
+
+            const doc =
+                createPDF();
+
+            const pdfBlob =
+                doc.output(
+                    "blob"
+                );
+
+            const fileName =
+                getPDFFileName();
+
+            const pdfFile =
+                new File(
+                    [pdfBlob],
+                    fileName,
+                    {
+                        type:
+                            "application/pdf"
+                    }
+                );
+
+            /*
+             * Native Android/iPhone file sharing.
+             */
+
+            if (
+                navigator.share &&
+                navigator.canShare &&
+                navigator.canShare({
+                    files: [pdfFile]
+                })
+            ) {
+
+                await navigator.share({
+
+                    title:
+                        "Al Ansar Receipt",
+
+                    files:
+                        [pdfFile]
+
+                });
+
+                showToast(
+                    "PDF shared successfully.",
+                    "success"
+                );
+
+            } else {
+
+                /*
+                 * Browser cannot directly share
+                 * files. Download it instead.
+                 */
+
+                doc.save(
+                    fileName
+                );
+
+                showToast(
+                    "PDF downloaded. Open it and use your phone's Share button to send it through WhatsApp.",
+                    "info"
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error(error);
+
+            /*
+             * User cancelled Android share sheet.
+             * Do not show an error.
+             */
+
+            if (
+                error.name ===
+                "AbortError"
+            ) {
+
+                return;
+
+            }
+
+            /*
+             * If sharing fails, automatically
+             * download the PDF instead.
+             */
+
+            try {
+
+                const doc =
+                    createPDF();
+
+                const fileName =
+                    getPDFFileName();
+
+                doc.save(
+                    fileName
+                );
+
+                showToast(
+                    "Direct sharing was unavailable, so the PDF was downloaded instead.",
+                    "info"
+                );
+
+            } catch (downloadError) {
+
+                showToast(
+                    "Unable to create the PDF: " +
+                    downloadError.message,
+                    "error"
+                );
+
+            }
+
+        } finally {
+
+            sharePdfBtn.disabled =
+                false;
+
+            sharePdfBtn.innerHTML =
+                originalText;
+
+        }
+
+    }
+);
+
+/* =========================================================
+   PRINT / SAVE PDF
+========================================================= */
+
+printPdfBtn.addEventListener(
+    "click",
+    function() {
+
+        if (!lastGeneratedOrder) {
+
+            showToast(
+                "Please generate the receipt first.",
+                "warning"
+            );
+
+            return;
+        }
+
+        try {
+
+            const doc =
+                createPDF();
+
+            const pdfBlob =
+                doc.output(
+                    "blob"
+                );
+
+            const pdfURL =
+                URL.createObjectURL(
+                    pdfBlob
+                );
+
+            /*
+             * Open the PDF immediately because
+             * this happens directly from the button
+             * click and is therefore less likely to
+             * be blocked by the browser.
+             */
+
+            const newWindow =
+                window.open(
+                    "",
+                    "_blank"
+                );
+
+            if (!newWindow) {
+
+                URL.revokeObjectURL(
+                    pdfURL
+                );
+
+                showToast(
+                    "The browser blocked the PDF window. Use Download PDF instead.",
+                    "warning"
+                );
+
+                return;
+            }
+
+            /*
+             * Tell the new tab to load
+             * the actual PDF.
+             */
+
+            newWindow.location.href =
+                pdfURL;
+
+            showToast(
+                "PDF opened. You can now print or save it.",
+                "success"
+            );
+
+            /*
+             * Keep URL alive long enough
+             * for mobile browsers to load it.
+             */
+
+            setTimeout(
+                function() {
+
+                    URL.revokeObjectURL(
+                        pdfURL
+                    );
+
+                },
+                120000
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            showToast(
+                "Unable to open the PDF: " +
+                error.message,
+                "error"
+            );
+
+        }
+
+    }
+);
+
+/* =========================================================
+   CLEAR CART
+========================================================= */
+
+clearCartBtn.addEventListener(
+    "click",
+    function() {
+
+        cart = [];
+
+        lastGeneratedOrder =
+            null;
+
+        receiptGeneratedForCurrentCart =
+            false;
+
+        renderCart();
+
+        receiptItems.innerHTML =
+            `<p class="text-center text-slate-400
+                       py-5 italic text-[10px]">
+
+                No items billed yet.
+
+            </p>`;
+
+        receiptGrandTotal.textContent =
+            "KSh 0";
+
+        receiptCustomerName.textContent =
+            "Walk-in Customer";
+
+        receiptCustomerPhone.textContent =
+            "";
+
+        receiptDate.textContent =
+            "-- / -- / ---- --:--:--";
+
+        disablePDFButtons();
+
+        generateReceiptBtn.disabled =
+            false;
+
+        generateReceiptBtn.classList.remove(
+            "opacity-50",
+            "cursor-not-allowed"
+        );
+
+        showToast(
+            "Cart cleared. Ready for a new sale.",
+            "info"
+        );
+
+    }
+);
+
+</script>
+
+</body>
+</html>
